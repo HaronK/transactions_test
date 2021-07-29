@@ -6,11 +6,9 @@ pub fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Result<Vec<C
     let mut clients = HashMap::new();
 
     for tx in transactions {
-        if !clients.contains_key(&tx.client_id) {
-            clients.insert(tx.client_id, Client::new(tx.client_id));
-        }
-
-        let client = clients.get_mut(&tx.client_id).unwrap();
+        let client = clients
+            .entry(tx.client_id)
+            .or_insert_with(|| Client::new(tx.client_id));
 
         client.process(tx, messages);
     }
