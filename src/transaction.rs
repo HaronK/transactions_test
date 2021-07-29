@@ -1,7 +1,30 @@
-use crate::data::*;
+use crate::common::*;
 use serde::Deserialize;
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+pub enum TxType {
+    #[serde(rename = "deposit")]
+    Deposit,
+    #[serde(rename = "withdrawal")]
+    Withdrawal,
+    #[serde(rename = "dispute")]
+    Dispute,
+    #[serde(rename = "resolve")]
+    Resolve,
+    #[serde(rename = "chargeback")]
+    Chargeback,
+}
+
 pub type TxId = u32;
+
+#[derive(Deserialize)]
+pub struct InputTx {
+    #[serde(rename = "type")]
+    pub ty: TxType,
+    pub client: ClientId,
+    pub tx: TxId,
+    pub amount: Option<Value>,
+}
 
 #[derive(Debug, Clone)]
 pub enum TxState {
@@ -14,15 +37,6 @@ impl Default for TxState {
     fn default() -> Self {
         Self::Active
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InputTx {
-    #[serde(rename = "type")]
-    pub ty: TxType,
-    pub client: ClientId,
-    pub tx: TxId,
-    pub amount: Option<Value>,
 }
 
 #[derive(Debug, Clone)]

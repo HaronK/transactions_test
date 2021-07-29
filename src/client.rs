@@ -1,4 +1,4 @@
-use crate::{data::*, transaction::*};
+use crate::{common::*, message::Message, transaction::*};
 use serde::Serialize;
 
 #[derive(Serialize, Default)]
@@ -35,8 +35,8 @@ impl Client {
         }
     }
 
-    pub fn process(&mut self, tx: &Tx) {
-        if !self.validate(tx) {
+    pub fn process(&mut self, tx: &Tx, messages: &mut Vec<Message>) {
+        if !self.validate(tx, messages) {
             return;
         }
 
@@ -48,16 +48,12 @@ impl Client {
             }
             TxType::Withdrawal => {
                 if self.available < tx.amount {
-                    eprintln!(
-                        "ERROR: Cannot process withdrawal transaction {} for client {}. Not enough funds.",
-                        tx.tx_id, self.id
-                    );
-                    return;
+                    messages.push(Message::NotEnoughFunds(tx.client_id, tx.tx_id, tx.ty));
+                } else {
+                    self.available -= tx.amount;
+                    self.total -= tx.amount;
+                    self.transactions.push(tx.clone());
                 }
-
-                self.available -= tx.amount;
-                self.total -= tx.amount;
-                self.transactions.push(tx.clone());
             }
             TxType::Dispute => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                 Some(t) => match t.state {
@@ -67,36 +63,20 @@ impl Client {
                         t.state = TxState::InDispute;
                     }
                     TxState::InDispute => {
-                        eprintln!(
-                            "ERROR: Cannot process dispute transaction {} for client {}. Transaction already in dispute.",
-                            tx.client_id, self.id
-                        );
-                        return;
+                        messages.push(Message::AlreadyInDispute(tx.client_id, tx.tx_id, tx.ty));
                     }
                     TxState::Disputed => {
-                        eprintln!(
-                            "ERROR: Cannot process dispute transaction {} for client {}. Transaction was already disputed.",
-                            tx.client_id, self.id
-                        );
-                        return;
+                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
                     }
                 },
                 None => {
-                    eprintln!(
-                        "ERROR: Cannot process dispute transaction {} for client {}. Transaction is unknown.",
-                        tx.client_id, self.id
-                    );
-                    return;
+                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                 }
             },
             TxType::Resolve => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                 Some(t) => match t.state {
                     TxState::Active => {
-                        eprintln!(
-                            "ERROR: Cannot process resolve transaction {} for client {}. Transaction is not in dispute.",
-                            tx.client_id, self.id
-                        );
-                        return;
+                        messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
                     }
                     TxState::InDispute => {
                         self.available += tx.amount;
@@ -104,30 +84,18 @@ impl Client {
                         t.state = TxState::Disputed;
                     }
                     TxState::Disputed => {
-                        eprintln!(
-                            "ERROR: Cannot process resolve transaction {} for client {}. Transaction was already disputed.",
-                            tx.client_id, self.id
-                        );
-                        return;
+                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
                     }
                 },
                 None => {
-                    eprintln!(
-                        "ERROR: Cannot process resolve transaction {} for client {}. Transaction is unknown.",
-                        tx.client_id, self.id
-                    );
-                    return;
+                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                 }
             },
             TxType::Chargeback => {
                 match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                     Some(t) => match t.state {
                         TxState::Active => {
-                            eprintln!(
-                            "ERROR: Cannot process chargeback transaction {} for client {}. Transaction is not in dispute.",
-                            tx.client_id, self.id
-                        );
-                            return;
+                            messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
                         }
                         TxState::InDispute => {
                             self.held -= tx.amount;
@@ -136,19 +104,11 @@ impl Client {
                             self.locked = true;
                         }
                         TxState::Disputed => {
-                            eprintln!(
-                            "ERROR: Cannot process chargeback transaction {} for client {}. Transaction was already disputed.",
-                            tx.client_id, self.id
-                        );
-                            return;
+                            messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
                         }
                     },
                     None => {
-                        eprintln!(
-                        "ERROR: Cannot process chargeback transaction {} for client {}. Transaction is unknown.",
-                        tx.client_id, self.id
-                    );
-                        return;
+                        messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                     }
                 }
             }
@@ -157,24 +117,18 @@ impl Client {
         // eprintln!("INFO: {:?} -> {:?}", tx, self);
     }
 
-    fn validate(&self, tx: &Tx) -> bool {
+    fn validate(&self, tx: &Tx, messages: &mut Vec<Message>) -> bool {
         assert_eq!(self.id, tx.client_id);
 
         if self.locked {
-            eprintln!(
-                "ERROR: Cannot process transaction {} for client {}. Account is locked.",
-                tx.client_id, self.id
-            );
+            messages.push(Message::AccountIsLocked(tx.client_id, tx.tx_id, tx.ty));
             return false;
         }
 
         if (tx.ty == TxType::Deposit || tx.ty == TxType::Withdrawal)
             && self.transactions.iter().any(|t| t.tx_id == tx.tx_id)
         {
-            eprintln!(
-                "ERROR: Cannot process transaction {} for client {}. Transaction with the same id was already processed.",
-                tx.client_id, self.id
-            );
+            messages.push(Message::TransactionExist(tx.client_id, tx.tx_id, tx.ty));
             return false;
         }
 
