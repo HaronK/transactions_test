@@ -1,11 +1,13 @@
-use crate::{message::*, transaction::*};
+use crate::{common::*, process::process, transaction::*};
 use anyhow::{bail, Result};
 use client::Client;
-use std::{collections::HashMap, env, io};
+use serde::Deserialize;
+use std::{env, io};
 
 mod client;
 mod common;
 mod message;
+mod process;
 mod transaction;
 
 fn main() -> Result<()> {
@@ -44,7 +46,7 @@ fn load_transactions(path: &str) -> Result<Vec<Tx>> {
     for record in reader.deserialize() {
         let input_tx: InputTx = record?;
 
-        validate(&input_tx)?;
+        input_tx.validate()?;
 
         transactions.push(input_tx.into());
     }
@@ -62,51 +64,58 @@ fn print_clients(clients: Vec<Client>) -> Result<()> {
     Ok(())
 }
 
-fn validate(tx: &InputTx) -> Result<()> {
-    match tx.ty {
-        TxType::Deposit | TxType::Withdrawal => match tx.amount {
-            Some(amount) if amount <= 0.0 => {
-                bail!(
-                    "ERROR: {:?} transaction {} for client {} contains negative amount.",
-                    tx.ty,
-                    tx.tx,
-                    tx.client
-                );
-            }
-            None => {
-                bail!(
-                    "ERROR: {:?} transaction {} for client {} contains no amount.",
-                    tx.ty,
-                    tx.tx,
-                    tx.client
-                );
-            }
-            _ => (),
-        },
-        _ => {
-            if tx.amount.is_some() {
-                eprintln!(
-                    "WARNING: {:?} transaction {} for client {} should not contain amount.",
-                    tx.ty, tx.tx, tx.client
-                );
-            }
-        }
-    }
-    Ok(())
+#[derive(Deserialize)]
+pub struct InputTx {
+    #[serde(rename = "type")]
+    pub ty: TxType,
+    pub client: ClientId,
+    pub tx: TxId,
+    pub amount: Option<Value>,
 }
 
-fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Result<Vec<Client>> {
-    let mut clients = HashMap::new();
-
-    for tx in transactions {
-        if !clients.contains_key(&tx.client_id) {
-            clients.insert(tx.client_id, Client::new(tx.client_id));
+impl From<InputTx> for Tx {
+    fn from(tx: InputTx) -> Self {
+        Self {
+            ty: tx.ty,
+            client_id: tx.client,
+            tx_id: tx.tx,
+            amount: tx.amount.unwrap_or_default(),
+            state: TxState::Active,
         }
-
-        let client = clients.get_mut(&tx.client_id).unwrap();
-
-        client.process(tx, messages);
     }
+}
 
-    Ok(clients.drain().map(|(_, v)| v).collect())
+impl InputTx {
+    fn validate(&self) -> Result<()> {
+        match self.ty {
+            TxType::Deposit | TxType::Withdrawal => match self.amount {
+                Some(amount) if amount <= 0.0 => {
+                    bail!(
+                        "ERROR: {:?} transaction {} for client {} contains negative amount.",
+                        self.ty,
+                        self.tx,
+                        self.client
+                    );
+                }
+                None => {
+                    bail!(
+                        "ERROR: {:?} transaction {} for client {} contains no amount.",
+                        self.ty,
+                        self.tx,
+                        self.client
+                    );
+                }
+                _ => (),
+            },
+            _ => {
+                if self.amount.is_some() {
+                    eprintln!(
+                        "WARNING: {:?} transaction {} for client {} should not contain amount.",
+                        self.ty, self.tx, self.client
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 }
