@@ -5,10 +5,10 @@ pub enum Message {
     NotEnoughFunds(ClientId, TxId, TxType),
     AlreadyInDispute(ClientId, TxId, TxType),
     AlreadyDisputed(ClientId, TxId, TxType),
-    UnknownTransaction(ClientId, TxId, TxType),
     NotInDispute(ClientId, TxId, TxType),
     AccountIsLocked(ClientId, TxId, TxType),
     TransactionExist(ClientId, TxId, TxType),
+    UnknownTransaction(ClientId, TxId),
 }
 
 impl std::fmt::Debug for Message {
@@ -28,7 +28,6 @@ impl std::fmt::Debug for Message {
             Self::AlreadyDisputed(c, tx, ty) => {
                 get_msg(ty, tx, c, "Transaction was already disputed")
             }
-            Self::UnknownTransaction(c, tx, ty) => get_msg(ty, tx, c, "Transaction is unknown"),
             Self::NotInDispute(c, tx, ty) => get_msg(ty, tx, c, "Transaction is not in dispute"),
             Self::AccountIsLocked(c, tx, ty) => get_msg(ty, tx, c, "Account is locked"),
             Self::TransactionExist(c, tx, ty) => get_msg(
@@ -37,6 +36,10 @@ impl std::fmt::Debug for Message {
                 c,
                 "Transaction with the same id was already processed",
             ),
+            Self::UnknownTransaction(c, tx) => f.write_fmt(format_args!(
+                "ERROR: Cannot process transaction {} for client {}. Transaction is unknown.",
+                tx, c
+            )),
         }
     }
 }

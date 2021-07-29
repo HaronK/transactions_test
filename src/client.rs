@@ -74,20 +74,20 @@ impl Client {
                         t.state = TxState::InDispute;
                     }
                     TxState::InDispute => {
-                        messages.push(Message::AlreadyInDispute(tx.client_id, tx.tx_id, tx.ty));
+                        messages.push(Message::AlreadyInDispute(tx.client_id, tx.tx_id, t.ty));
                     }
                     TxState::Disputed => {
-                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
+                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, t.ty));
                     }
                 },
                 None => {
-                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
+                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id));
                 }
             },
             TxType::Resolve => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                 Some(t) => match t.state {
                     TxState::Active => {
-                        messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
+                        messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, t.ty));
                     }
                     TxState::InDispute => {
                         let amount = t.dispute_amount();
@@ -96,18 +96,18 @@ impl Client {
                         t.state = TxState::Disputed;
                     }
                     TxState::Disputed => {
-                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
+                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, t.ty));
                     }
                 },
                 None => {
-                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
+                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id));
                 }
             },
             TxType::Chargeback => {
                 match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                     Some(t) => match t.state {
                         TxState::Active => {
-                            messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
+                            messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, t.ty));
                         }
                         TxState::InDispute => {
                             let amount = t.dispute_amount();
@@ -117,11 +117,11 @@ impl Client {
                             self.locked = true;
                         }
                         TxState::Disputed => {
-                            messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
+                            messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, t.ty));
                         }
                     },
                     None => {
-                        messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
+                        messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id));
                     }
                 }
             }
