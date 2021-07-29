@@ -10,9 +10,9 @@ pub struct Client {
     pub total: Value,
     pub locked: bool,
 
-    /// Client's deposit and withdrawal transactions
+    /// Client's transaction indices in the global list of transactions (arena)
     #[serde(skip)]
-    pub transactions: Vec<Tx>,
+    pub transactions: Vec<usize>,
 }
 
 impl PartialEq for Client {
@@ -22,6 +22,12 @@ impl PartialEq for Client {
             && self.held == other.held
             && self.total == other.total
             && self.locked == other.locked
+    }
+}
+
+impl PartialEq<&Client> for Client {
+    fn eq(&self, other: &&Client) -> bool {
+        self.eq(*other)
     }
 }
 
@@ -45,8 +51,14 @@ impl Client {
         }
     }
 
-    pub fn process(&mut self, tx: &Tx, messages: &mut Vec<Message>) {
-        if !self.validate(tx, messages) {
+    pub fn process<'a, F>(&mut self, tx_idx: usize, mut get_tx: F, messages: &mut Vec<Message>)
+    where
+        F: FnMut(usize) -> Option<&'a mut Tx>,
+    {
+        // Incoming transaction index should always correspond to the valid transaction object
+        let tx = get_tx(tx_idx).unwrap();
+
+        if !self.validate(tx_idx, tx, messages) {
             return;
         }
 
@@ -54,7 +66,7 @@ impl Client {
             TxType::Deposit => {
                 self.available += tx.amount;
                 self.total += tx.amount;
-                self.transactions.push(tx.clone());
+                // self.transactions.push(tx);
             }
             TxType::Withdrawal => {
                 if self.available < tx.amount || self.total < tx.amount {
@@ -62,10 +74,10 @@ impl Client {
                 } else {
                     self.available -= tx.amount;
                     self.total -= tx.amount;
-                    self.transactions.push(tx.clone());
+                    // self.transactions.push(tx);
                 }
             }
-            TxType::Dispute => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
+            TxType::Dispute => match self.get_tx_by_id(tx.tx_id, get_tx) {
                 Some(t) => match t.state {
                     TxState::Active => {
                         let amount = t.dispute_amount();
@@ -84,7 +96,7 @@ impl Client {
                     messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                 }
             },
-            TxType::Resolve => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
+            TxType::Resolve => match self.get_tx_by_id(tx.tx_id, get_tx) {
                 Some(t) => match t.state {
                     TxState::Active => {
                         messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
@@ -103,34 +115,46 @@ impl Client {
                     messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                 }
             },
-            TxType::Chargeback => {
-                match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
-                    Some(t) => match t.state {
-                        TxState::Active => {
-                            messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
-                        }
-                        TxState::InDispute => {
-                            let amount = t.dispute_amount();
-                            self.held -= amount;
-                            self.total -= amount;
-                            t.state = TxState::Disputed;
-                            self.locked = true;
-                        }
-                        TxState::Disputed => {
-                            messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
-                        }
-                    },
-                    None => {
-                        messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
+            TxType::Chargeback => match self.get_tx_by_id(tx.tx_id, get_tx) {
+                Some(t) => match t.state {
+                    TxState::Active => {
+                        messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
                     }
+                    TxState::InDispute => {
+                        let amount = t.dispute_amount();
+                        self.held -= amount;
+                        self.total -= amount;
+                        t.state = TxState::Disputed;
+                        self.locked = true;
+                    }
+                    TxState::Disputed => {
+                        messages.push(Message::AlreadyDisputed(tx.client_id, tx.tx_id, tx.ty));
+                    }
+                },
+                None => {
+                    messages.push(Message::UnknownTransaction(tx.client_id, tx.tx_id, tx.ty));
                 }
-            }
+            },
         }
+
+        self.transactions.push(tx_idx);
 
         // eprintln!("INFO: {:?} -> {:?}", tx, self);
     }
 
-    fn validate(&self, tx: &Tx, messages: &mut Vec<Message>) -> bool {
+    fn get_tx_by_id<'a, F>(&self, tx_id: TxId, mut get_tx: F) -> Option<&'a mut Tx>
+    where
+        F: FnMut(usize) -> Option<&'a mut Tx>,
+    {
+        self.transactions
+            .iter()
+            .map(|tx_idx| get_tx(*tx_idx))
+            .filter(|opt_tx| opt_tx.is_some())
+            .map(|opt_tx| opt_tx.unwrap())
+            .find(|tx| tx.tx_id == tx_id)
+    }
+
+    fn validate(&self, tx_idx: usize, tx: &Tx, messages: &mut Vec<Message>) -> bool {
         assert_eq!(self.id, tx.client_id);
 
         if self.locked {
@@ -138,9 +162,7 @@ impl Client {
             return false;
         }
 
-        if (tx.ty == TxType::Deposit || tx.ty == TxType::Withdrawal)
-            && self.transactions.iter().any(|t| t.tx_id == tx.tx_id)
-        {
+        if self.transactions.iter().any(|idx| *idx == tx_idx) {
             messages.push(Message::TransactionExist(tx.client_id, tx.tx_id, tx.ty));
             return false;
         }

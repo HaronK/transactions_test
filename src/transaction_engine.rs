@@ -1,19 +1,33 @@
-use crate::{client::Client, message::Message, transaction::Tx};
+use crate::{client::Client, common::ClientId, message::Message, transaction::Tx};
 use anyhow::Result;
 use std::collections::HashMap;
 
-pub fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Result<Vec<Client>> {
-    let mut clients = HashMap::new();
+#[derive(Default)]
+pub struct TransactionEngine {
+    transactions: Vec<Tx>,
+    clients: HashMap<ClientId, Client>,
+}
 
-    for tx in transactions {
-        let client = clients
-            .entry(tx.client_id)
-            .or_insert_with(|| Client::new(tx.client_id));
-
-        client.process(tx, messages);
+impl TransactionEngine {
+    pub fn clients(&self) -> Vec<&Client> {
+        self.clients.values().collect()
     }
 
-    Ok(clients.drain().map(|(_, v)| v).collect())
+    pub fn process(&mut self, tx: Tx, messages: &mut Vec<Message>) -> Result<()> {
+        let client_id = tx.client_id;
+        let tx_idx = self.transactions.len();
+
+        self.transactions.push(tx);
+
+        let client = self
+            .clients
+            .entry(client_id)
+            .or_insert_with(|| Client::new(client_id));
+
+        client.process(tx_idx, |idx| self.transactions.get_mut(idx), messages);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -24,13 +38,13 @@ mod tests {
 
     #[test]
     fn test_empty() -> Result<()> {
-        test_process(&[], &[], &[])
+        test_process(vec![], &[], &[])
     }
 
     #[test]
     fn test_single_transaction() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0)],
+            vec![tx_deposit(1, 1, 5.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[],
         )
@@ -39,7 +53,7 @@ mod tests {
     #[test]
     fn test_transaction_same_id_fail() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_deposit(1, 1, 2.0)],
+            vec![tx_deposit(1, 1, 5.0), tx_deposit(1, 1, 2.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::TransactionExist(1, 1, TxType::Deposit)],
         )
@@ -48,7 +62,7 @@ mod tests {
     #[test]
     fn test_withdrawal_full() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 5.0)],
+            vec![tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 5.0)],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[],
         )
@@ -57,7 +71,7 @@ mod tests {
     #[test]
     fn test_withdrawal_partial() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 2.0)],
+            vec![tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 2.0)],
             &[client(1, 3.0, 0.0, 3.0, false)],
             &[],
         )
@@ -66,7 +80,7 @@ mod tests {
     #[test]
     fn test_withdrawal_exeeding() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 7.0)],
+            vec![tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 7.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::NotEnoughFunds(1, 2, TxType::Withdrawal)],
         )
@@ -75,7 +89,7 @@ mod tests {
     #[test]
     fn test_deposit_dispute() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1)],
+            vec![tx_deposit(1, 1, 5.0), tx_dispute(1, 1)],
             &[client(1, 0.0, 5.0, 5.0, false)],
             &[],
         )
@@ -84,7 +98,7 @@ mod tests {
     #[test]
     fn test_deposit_resolve() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_resolve(1, 1)],
+            vec![tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_resolve(1, 1)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[],
         )
@@ -93,7 +107,7 @@ mod tests {
     #[test]
     fn test_deposit_chargeback() -> Result<()> {
         test_process(
-            &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_chargeback(1, 1)],
+            vec![tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_chargeback(1, 1)],
             &[client(1, 0.0, 0.0, 0.0, true)],
             &[],
         )
@@ -102,7 +116,7 @@ mod tests {
     #[test]
     fn test_withdrawal_dispute() -> Result<()> {
         test_process(
-            &[
+            vec![
                 tx_deposit(1, 1, 5.0),
                 tx_withdrawal(1, 2, 5.0),
                 tx_dispute(1, 2),
@@ -115,7 +129,7 @@ mod tests {
     #[test]
     fn test_withdrawal_resolve() -> Result<()> {
         test_process(
-            &[
+            vec![
                 tx_deposit(1, 1, 5.0),
                 tx_withdrawal(1, 2, 5.0),
                 tx_dispute(1, 2),
@@ -129,7 +143,7 @@ mod tests {
     #[test]
     fn test_withdrawal_chargeback() -> Result<()> {
         test_process(
-            &[
+            vec![
                 tx_deposit(1, 1, 5.0),
                 tx_withdrawal(1, 2, 5.0),
                 tx_dispute(1, 2),
@@ -143,7 +157,7 @@ mod tests {
     #[test]
     fn test_withdrawal_dispute_withdrawal_fail() -> Result<()> {
         test_process(
-            &[
+            vec![
                 tx_deposit(1, 1, 5.0),
                 tx_withdrawal(1, 2, 5.0),
                 tx_dispute(1, 2),
@@ -156,20 +170,25 @@ mod tests {
 
     mod helper {
         use crate::{
-            client::Client, common::*, message::Message, process::process, transaction::*,
+            client::Client, common::*, message::Message, transaction::*,
+            transaction_engine::TransactionEngine,
         };
         use anyhow::Result;
 
         pub fn test_process(
-            transactions: &[Tx],
+            transactions: Vec<Tx>,
             expected_clients: &[Client],
             expected_messages: &[Message],
         ) -> Result<()> {
+            let mut te = TransactionEngine::default();
             let mut messages = vec![];
-            let clients = process(transactions, &mut messages)?;
+
+            for tx in transactions {
+                te.process(tx, &mut messages)?;
+            }
 
             assert_eq!(expected_messages, messages, "messages");
-            assert_eq!(expected_clients, clients, "clients");
+            assert_eq!(expected_clients, te.clients(), "clients");
 
             Ok(())
         }
@@ -204,7 +223,7 @@ mod tests {
             }
         }
 
-        pub fn client(
+        pub fn client<'a>(
             client: ClientId,
             available: Value,
             held: Value,

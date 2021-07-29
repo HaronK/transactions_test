@@ -1,4 +1,4 @@
-use crate::{common::*, process::process, transaction::*};
+use crate::{common::*, transaction::*, transaction_engine::TransactionEngine};
 use anyhow::{bail, Result};
 use client::Client;
 use serde::Deserialize;
@@ -7,8 +7,8 @@ use std::{env, io};
 mod client;
 mod common;
 mod message;
-mod process;
 mod transaction;
+mod transaction_engine;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -22,18 +22,23 @@ fn main() -> Result<()> {
     // transactions.iter().for_each(|tx| eprintln!("{:?}", tx));
 
     let mut messages = vec![];
-    let clients_res = process(&transactions, &mut messages);
+    let mut te = TransactionEngine::default();
+    let mut res = Ok(());
+    for tx in transactions {
+        match te.process(tx, &mut messages) {
+            Err(err) => {
+                res = Err(err);
+                break;
+            }
+            _ => {}
+        }
+    }
 
     messages.iter().for_each(|m| eprintln!("{:?}", m));
 
-    match clients_res {
-        Ok(clients) => {
-            // println!("Clients: {:#?}", clients);
+    print_clients(&te.clients())?;
 
-            print_clients(clients)
-        }
-        Err(err) => Err(err),
-    }
+    res
 }
 
 fn load_transactions(path: &str) -> Result<Vec<Tx>> {
@@ -54,7 +59,7 @@ fn load_transactions(path: &str) -> Result<Vec<Tx>> {
     Ok(transactions)
 }
 
-fn print_clients(clients: Vec<Client>) -> Result<()> {
+fn print_clients(clients: &[&Client]) -> Result<()> {
     let mut writer = csv::Writer::from_writer(io::stdout());
 
     for client in clients {
