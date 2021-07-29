@@ -15,6 +15,16 @@ pub struct Client {
     pub transactions: Vec<Tx>,
 }
 
+impl PartialEq for Client {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.available == other.available
+            && self.held == other.held
+            && self.total == other.total
+            && self.locked == other.locked
+    }
+}
+
 impl std::fmt::Debug for Client {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
@@ -28,9 +38,9 @@ impl std::fmt::Debug for Client {
 }
 
 impl Client {
-    pub fn new(client: ClientId) -> Self {
+    pub fn new(id: ClientId) -> Self {
         Self {
-            id: client,
+            id,
             ..Default::default()
         }
     }
@@ -47,7 +57,7 @@ impl Client {
                 self.transactions.push(tx.clone());
             }
             TxType::Withdrawal => {
-                if self.available < tx.amount {
+                if self.available < tx.amount || self.total < tx.amount {
                     messages.push(Message::NotEnoughFunds(tx.client_id, tx.tx_id, tx.ty));
                 } else {
                     self.available -= tx.amount;
@@ -58,8 +68,9 @@ impl Client {
             TxType::Dispute => match self.transactions.iter_mut().find(|t| t.tx_id == tx.tx_id) {
                 Some(t) => match t.state {
                     TxState::Active => {
-                        self.available -= tx.amount;
-                        self.held += tx.amount;
+                        let amount = t.dispute_amount();
+                        self.available -= amount;
+                        self.held += amount;
                         t.state = TxState::InDispute;
                     }
                     TxState::InDispute => {
@@ -79,8 +90,9 @@ impl Client {
                         messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
                     }
                     TxState::InDispute => {
-                        self.available += tx.amount;
-                        self.held -= tx.amount;
+                        let amount = t.dispute_amount();
+                        self.available += amount;
+                        self.held -= amount;
                         t.state = TxState::Disputed;
                     }
                     TxState::Disputed => {
@@ -98,8 +110,9 @@ impl Client {
                             messages.push(Message::NotInDispute(tx.client_id, tx.tx_id, tx.ty));
                         }
                         TxState::InDispute => {
-                            self.held -= tx.amount;
-                            self.total -= tx.amount;
+                            let amount = t.dispute_amount();
+                            self.held -= amount;
+                            self.total -= amount;
                             t.state = TxState::Disputed;
                             self.locked = true;
                         }

@@ -1,5 +1,6 @@
 use crate::{common::*, transaction::*};
 
+#[derive(PartialEq)]
 pub enum Message {
     NotEnoughFunds(ClientId, TxId, TxType),
     AlreadyInDispute(ClientId, TxId, TxType),

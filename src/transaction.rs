@@ -38,3 +38,15 @@ pub struct Tx {
     pub amount: Value,
     pub state: TxState,
 }
+
+impl Tx {
+    pub fn dispute_amount(&self) -> Value {
+        match self.ty {
+            TxType::Deposit => self.amount,
+            TxType::Withdrawal => -self.amount,
+            TxType::Dispute => unreachable!(),
+            TxType::Resolve => unreachable!(),
+            TxType::Chargeback => unreachable!(),
+        }
+    }
+}
