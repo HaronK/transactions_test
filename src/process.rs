@@ -1,8 +1,7 @@
 use crate::{client::Client, message::Message, transaction::Tx};
-use anyhow::Result;
 use std::collections::HashMap;
 
-pub fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Result<Vec<Client>> {
+pub fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Vec<Client> {
     let mut clients = HashMap::new();
 
     for tx in transactions {
@@ -13,78 +12,77 @@ pub fn process(transactions: &[Tx], messages: &mut Vec<Message>) -> Result<Vec<C
         client.process(tx, messages);
     }
 
-    Ok(clients.drain().map(|(_, v)| v).collect())
+    clients.drain().map(|(_, v)| v).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{message::Message, transaction::*};
-    use anyhow::Result;
     use helper::*;
 
     #[test]
-    fn test_empty() -> Result<()> {
-        test_process(&[], &[], &[])
+    fn test_empty() {
+        test_process(&[], &[], &[]);
     }
 
     #[test]
-    fn test_single_transaction() -> Result<()> {
+    fn test_single_transaction() {
         test_process(
             &[tx_deposit(1, 1, 5.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_transaction_same_id_fail() -> Result<()> {
+    fn test_transaction_same_id_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_deposit(1, 1, 2.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::TransactionExist(1, 1, TxType::Deposit)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_empty_fail() -> Result<()> {
+    fn test_withdrawal_empty_fail() {
         test_process(
             &[tx_withdrawal(1, 1, 5.0)],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::NotEnoughFunds(1, 1, TxType::Withdrawal)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_full() -> Result<()> {
+    fn test_withdrawal_full() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 5.0)],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_partial() -> Result<()> {
+    fn test_withdrawal_partial() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 2.0)],
             &[client(1, 3.0, 0.0, 3.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_exeeding() -> Result<()> {
+    fn test_withdrawal_exeeding() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_withdrawal(1, 2, 7.0)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::NotEnoughFunds(1, 2, TxType::Withdrawal)],
-        )
+        );
     }
 
     // Dispute transaction before the last one
     #[test]
     #[ignore = "Not clear expected behavior"]
-    fn test_dispute_prev() -> Result<()> {
+    fn test_dispute_prev() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -94,38 +92,38 @@ mod tests {
             ],
             &[client(1, 0.0, 5.0, 5.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_dispute() -> Result<()> {
+    fn test_deposit_dispute() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1)],
             &[client(1, 0.0, 5.0, 5.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_dispute_unknown_fail() -> Result<()> {
+    fn test_deposit_dispute_unknown_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_dispute(1, 2)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::UnknownTransaction(1, 2)],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_already_in_dispute_fail() -> Result<()> {
+    fn test_deposit_already_in_dispute_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_dispute(1, 1)],
             &[client(1, 0.0, 5.0, 5.0, false)],
             &[Message::AlreadyInDispute(1, 1, TxType::Deposit)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_already_in_dispute_fail() -> Result<()> {
+    fn test_withdrawal_already_in_dispute_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -135,20 +133,20 @@ mod tests {
             ],
             &[client(1, 5.0, -3.0, 2.0, false)],
             &[Message::AlreadyInDispute(1, 2, TxType::Withdrawal)],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_resolve() -> Result<()> {
+    fn test_deposit_resolve() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_resolve(1, 1)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_resolve_unknown_fail() -> Result<()> {
+    fn test_deposit_resolve_unknown_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_resolve(1, 2)],
             &[client(1, 5.0, 0.0, 5.0, false)],
@@ -157,16 +155,16 @@ mod tests {
     }
 
     #[test]
-    fn test_deposit_resolve_fail() -> Result<()> {
+    fn test_deposit_resolve_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_resolve(1, 1)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::NotInDispute(1, 1, TxType::Deposit)],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_resolve_dispute_fail() -> Result<()> {
+    fn test_deposit_resolve_dispute_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -176,29 +174,29 @@ mod tests {
             ],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::AlreadyDisputed(1, 1, TxType::Deposit)],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_chargeback() -> Result<()> {
+    fn test_deposit_chargeback() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_dispute(1, 1), tx_chargeback(1, 1)],
             &[client(1, 0.0, 0.0, 0.0, true)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_deposit_chargeback_unknown_fail() -> Result<()> {
+    fn test_deposit_chargeback_unknown_fail() {
         test_process(
             &[tx_deposit(1, 1, 5.0), tx_chargeback(1, 2)],
             &[client(1, 5.0, 0.0, 5.0, false)],
             &[Message::UnknownTransaction(1, 2)],
-        )
+        );
     }
 
     #[test]
-    fn test_account_locked() -> Result<()> {
+    fn test_account_locked() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -208,11 +206,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, true)],
             &[Message::AccountIsLocked(1, 2, TxType::Deposit)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_dispute() -> Result<()> {
+    fn test_withdrawal_dispute() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -221,11 +219,11 @@ mod tests {
             ],
             &[client(1, 5.0, -5.0, 0.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_dispute_unknown_fail() -> Result<()> {
+    fn test_withdrawal_dispute_unknown_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -234,11 +232,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::UnknownTransaction(1, 3)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_resolve() -> Result<()> {
+    fn test_withdrawal_resolve() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -248,11 +246,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_resolve_unknown_fail() -> Result<()> {
+    fn test_withdrawal_resolve_unknown_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -261,11 +259,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::UnknownTransaction(1, 3)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_resolve_fail() -> Result<()> {
+    fn test_withdrawal_resolve_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -274,11 +272,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::NotInDispute(1, 2, TxType::Withdrawal)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_resolve_dispute() -> Result<()> {
+    fn test_withdrawal_resolve_dispute() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -289,11 +287,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::AlreadyDisputed(1, 2, TxType::Withdrawal)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_chargeback() -> Result<()> {
+    fn test_withdrawal_chargeback() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -303,11 +301,11 @@ mod tests {
             ],
             &[client(1, 5.0, 0.0, 5.0, true)],
             &[],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_chargeback_unknown_fail() -> Result<()> {
+    fn test_withdrawal_chargeback_unknown_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -316,11 +314,11 @@ mod tests {
             ],
             &[client(1, 0.0, 0.0, 0.0, false)],
             &[Message::UnknownTransaction(1, 3)],
-        )
+        );
     }
 
     #[test]
-    fn test_withdrawal_dispute_withdrawal_fail() -> Result<()> {
+    fn test_withdrawal_dispute_withdrawal_fail() {
         test_process(
             &[
                 tx_deposit(1, 1, 5.0),
@@ -330,27 +328,24 @@ mod tests {
             ],
             &[client(1, 5.0, -5.0, 0.0, false)],
             &[Message::NotEnoughFunds(1, 3, TxType::Withdrawal)],
-        )
+        );
     }
 
     mod helper {
         use crate::{
             client::Client, common::*, message::Message, process::process, transaction::*,
         };
-        use anyhow::Result;
 
         pub fn test_process(
             transactions: &[Tx],
             expected_clients: &[Client],
             expected_messages: &[Message],
-        ) -> Result<()> {
+        ) {
             let mut messages = vec![];
-            let clients = process(transactions, &mut messages)?;
+            let clients = process(transactions, &mut messages);
 
             assert_eq!(expected_messages, messages, "messages");
             assert_eq!(expected_clients, clients, "clients");
-
-            Ok(())
         }
 
         pub fn tx_deposit(client_id: ClientId, tx_id: TxId, amount: Value) -> Tx {

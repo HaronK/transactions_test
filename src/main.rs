@@ -22,18 +22,13 @@ fn main() -> Result<()> {
     // transactions.iter().for_each(|tx| eprintln!("{:?}", tx));
 
     let mut messages = vec![];
-    let clients_res = process(&transactions, &mut messages);
+    let clients = process(&transactions, &mut messages);
 
     messages.iter().for_each(|m| eprintln!("{:?}", m));
 
-    match clients_res {
-        Ok(clients) => {
-            // println!("Clients: {:#?}", clients);
+    // println!("Clients: {:#?}", clients);
 
-            print_clients(clients)
-        }
-        Err(err) => Err(err),
-    }
+    print_clients(clients)
 }
 
 fn load_transactions(path: &str) -> Result<Vec<Tx>> {
