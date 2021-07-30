@@ -1,4 +1,4 @@
-use crate::common::*;
+use crate::common::{ClientId, Value};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
@@ -44,9 +44,7 @@ impl Tx {
         match self.ty {
             TxType::Deposit => self.amount,
             TxType::Withdrawal => -self.amount,
-            TxType::Dispute => unreachable!(),
-            TxType::Resolve => unreachable!(),
-            TxType::Chargeback => unreachable!(),
+            _ => unreachable!(),
         }
     }
 }

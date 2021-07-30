@@ -1,4 +1,7 @@
-use crate::{common::*, transaction::*};
+use crate::{
+    common::ClientId,
+    transaction::{TxId, TxType},
+};
 
 #[derive(PartialEq)]
 pub enum Message {

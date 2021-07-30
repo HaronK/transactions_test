@@ -1,4 +1,8 @@
-use crate::{common::*, process::process, transaction::*};
+use crate::{
+    common::{ClientId, Value},
+    process::process,
+    transaction::{Tx, TxId, TxState, TxType},
+};
 use anyhow::{bail, Result};
 use client::Client;
 use serde::Deserialize;
@@ -24,7 +28,9 @@ fn main() -> Result<()> {
     let mut messages = vec![];
     let clients = process(&transactions, &mut messages);
 
-    messages.iter().for_each(|m| eprintln!("{:?}", m));
+    for m in messages {
+        eprintln!("{:?}", m);
+    }
 
     // println!("Clients: {:#?}", clients);
 

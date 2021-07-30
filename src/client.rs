@@ -1,4 +1,8 @@
-use crate::{common::*, message::Message, transaction::*};
+use crate::{
+    common::{ClientId, Value},
+    message::Message,
+    transaction::{Tx, TxState, TxType},
+};
 use serde::Serialize;
 
 #[derive(Serialize, Default)]
@@ -41,7 +45,7 @@ impl Client {
     pub fn new(id: ClientId) -> Self {
         Self {
             id,
-            ..Default::default()
+            ..Self::default()
         }
     }
 
